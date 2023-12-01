@@ -42,12 +42,10 @@ class VectorizedEnvironment {
     num_envs_ = cfg_["num_envs"].template As<int>();
 
     environments_.reserve(num_envs_);
-    rewardInformation_.reserve(num_envs_);
     for (int i = 0; i < num_envs_; i++) {
       environments_.push_back(new ChildEnvironment(resourceDir_, cfg_, render_ && i == 0));
       environments_.back()->setSimulationTimeStep(cfg_["simulation_dt"].template As<double>());
       environments_.back()->setControlTimeStep(cfg_["control_dt"].template As<double>());
-      rewardInformation_.push_back(environments_.back()->getRewards().getStdMap());
     }
 
     for (int i = 0; i < num_envs_; i++) {
@@ -113,6 +111,16 @@ class VectorizedEnvironment {
       environments_[i]->setSeed(seed_inc++);
   }
 
+  void setItrNumber(int number) {
+    for (auto *env: environments_)
+      env->setItrNumber(number);
+  }
+
+  void setTargetSpeed(double vx, double vy, double wz) {
+    for (auto *env: environments_)
+      env->setTargetSpeed(vx, vy, wz);
+  }
+
   void close() {
     for (auto *env: environments_)
       env->close();
@@ -145,7 +153,14 @@ class VectorizedEnvironment {
       env->curriculumUpdate();
   };
 
-  const std::vector<std::map<std::string, float>>& getRewardInfo() { return rewardInformation_; }
+  void getRewardInfo(Eigen::Ref<EigenRowMajorMat> &rewardInfo){
+#pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < num_envs_; i++){
+      Eigen::Matrix<float, 16, 1> r_vec;
+      environments_[i]->getRewardInfo(r_vec);
+      rewardInfo.row(i) = r_vec;
+    }
+  }
 
  private:
   void updateObservationStatisticsAndNormalize(Eigen::Ref<EigenRowMajorMat> &ob, bool updateStatistics) {
@@ -174,7 +189,6 @@ class VectorizedEnvironment {
                            Eigen::Ref<EigenVec> &reward,
                            Eigen::Ref<EigenBoolVec> &done) {
     reward[agentId] = environments_[agentId]->step(action.row(agentId));
-    rewardInformation_[agentId] = environments_[agentId]->getRewards().getStdMap();
 
     float terminalReward = 0;
     done[agentId] = environments_[agentId]->isTerminalState(terminalReward);
@@ -186,7 +200,6 @@ class VectorizedEnvironment {
   }
 
   std::vector<ChildEnvironment *> environments_;
-  std::vector<std::map<std::string, float>> rewardInformation_;
 
   int num_envs_ = 1;
   int obDim_ = 0, actionDim_ = 0;
@@ -202,6 +215,8 @@ class VectorizedEnvironment {
   float obCount_ = 1e-4;
   EigenVec recentMean_, recentVar_, delta_;
   EigenVec epsilon;
+
+  double cmd_vx_ = 0.0, cmd_vy_ = 0.0, cmd_wz_ = 0.0;
 };
 
 

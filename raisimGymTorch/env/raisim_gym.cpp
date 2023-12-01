@@ -40,6 +40,9 @@ PYBIND11_MODULE(RAISIMGYM_TORCH_ENV_NAME, m) {
     .def("curriculumUpdate", &VectorizedEnvironment<ENVIRONMENT>::curriculumUpdate)
     .def("getObStatistics", &VectorizedEnvironment<ENVIRONMENT>::getObStatistics)
     .def("setObStatistics", &VectorizedEnvironment<ENVIRONMENT>::setObStatistics)
+    
+    .def("setItrNumber", &VectorizedEnvironment<ENVIRONMENT>::setItrNumber)
+    .def("setTargetSpeed", &VectorizedEnvironment<ENVIRONMENT>::setTargetSpeed)
     .def(py::pickle(
         [](const VectorizedEnvironment<ENVIRONMENT> &p) { // __getstate__ --> Pickling to Python
             /* Return a tuple that fully encodes the state of the object */

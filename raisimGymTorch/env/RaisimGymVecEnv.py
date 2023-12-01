@@ -28,6 +28,7 @@ class RaisimGymVecEnv:
         self.count = 0.0
         self.mean = np.zeros(self.num_obs, dtype=np.float32)
         self.var = np.zeros(self.num_obs, dtype=np.float32)
+        self.reward_info = np.zeros([self.num_envs, 16], dtype=np.float32)
 
     def seed(self, seed=None):
         self.wrapper.setSeed(seed)
@@ -68,7 +69,9 @@ class RaisimGymVecEnv:
         return self._observation
 
     def get_reward_info(self):
-        return self.wrapper.getRewardInfo()
+        self.wrapper.getRewardInfo(self.reward_info)
+        return self.reward_info.copy()
+
 
     def reset(self):
         self._reward = np.zeros(self.num_envs, dtype=np.float32)
@@ -79,6 +82,12 @@ class RaisimGymVecEnv:
 
     def curriculum_callback(self):
         self.wrapper.curriculumUpdate()
+
+    def set_itr_number(self, itr_number):
+        self.wrapper.setItrNumber(itr_number)
+
+    def set_target_speed(self, vx, vy, wz):
+        self.wrapper.setTargetSpeed(vx, vy, wz)
 
     @property
     def num_envs(self):

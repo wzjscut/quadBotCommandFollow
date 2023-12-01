@@ -2,7 +2,7 @@ seed: 1
 record_video: yes
 
 environment:
-  render: True
+  render: False
 # just testing commenting
   num_envs: 100
   eval_every_n: 200
@@ -11,11 +11,13 @@ environment:
   control_dt: 0.01
   max_time: 4.0
   action_std: 0.3
-  reward:
-    forwardVel:
-      coeff: 0.3
-    torque:
-      coeff: -4e-5
+  cmd_follow_flag: False
+  test: False
+  
+  done_reward: -10
+  vx_reward_coeff: 0.3
+  wz_reward_coeff: 0.3
+  torque_coeff: -4e-5
 
 architecture:
   policy_net: [128, 128]

@@ -18,12 +18,14 @@ class ENVIRONMENT : public RaisimGymEnv {
   explicit ENVIRONMENT(const std::string& resourceDir, const Yaml::Node& cfg, bool visualizable) :
       RaisimGymEnv(resourceDir, cfg), visualizable_(visualizable), normDist_(0, 1) {
 
+    curriculum_ = itr_number_;
+
     /// create world
     world_ = std::make_unique<raisim::World>();
 
     /// add objects
-    anymal_ = world_->addArticulatedSystem(resourceDir_+"/anymal/urdf/anymal.urdf");
-    anymal_->setName("anymal");
+    anymal_ = world_->addArticulatedSystem(resourceDir_+"/raibo2/raibo2.urdf");
+    anymal_->setName("raibo2");
     anymal_->setControlMode(raisim::ControlMode::PD_PLUS_FEEDFORWARD_TORQUE);
     world_->addGround();
 
@@ -38,7 +40,7 @@ class ENVIRONMENT : public RaisimGymEnv {
     pTarget_.setZero(gcDim_); vTarget_.setZero(gvDim_); pTarget12_.setZero(nJoints_);
 
     /// this is nominal configuration of anymal
-    gc_init_ << 0, 0, 0.50, 1.0, 0.0, 0.0, 0.0, 0.03, 0.4, -0.8, -0.03, 0.4, -0.8, 0.03, -0.4, 0.8, -0.03, -0.4, 0.8;
+    gc_init_ << 0, 0, 0.54, 1.0, 0.0, 0.0, 0.0, 0.03, 0.4, -0.8, -0.03, 0.4, -0.8, 0.03, 0.4, -0.8, -0.03, 0.4, -0.8;
 
     /// set pd gains
     Eigen::VectorXd jointPgain(gvDim_), jointDgain(gvDim_);
@@ -48,7 +50,7 @@ class ENVIRONMENT : public RaisimGymEnv {
     anymal_->setGeneralizedForce(Eigen::VectorXd::Zero(gvDim_));
 
     /// MUST BE DONE FOR ALL ENVIRONMENTS
-    obDim_ = 34;
+    obDim_ = 36;
     actionDim_ = nJoints_; actionMean_.setZero(actionDim_); actionStd_.setZero(actionDim_);
     obDouble_.setZero(obDim_);
 
@@ -58,8 +60,11 @@ class ENVIRONMENT : public RaisimGymEnv {
     READ_YAML(double, action_std, cfg_["action_std"]) /// example of reading params from the config
     actionStd_.setConstant(action_std);
 
-    /// Reward coefficients
-    rewards_.initializeFromConfigurationFile (cfg["reward"]);
+    /// reward 
+    READ_YAML(double, done_reward_, cfg_["done_reward"])
+    READ_YAML(double, vx_reward_coeff_, cfg_["vx_reward_coeff"])
+    READ_YAML(double, wz_reward_coeff_, cfg_["wz_reward_coeff"])
+    READ_YAML(double, torque_coeff_, cfg_["torque_coeff"])
 
     /// indices of links that should not make contact with ground
     footIndices_.insert(anymal_->getBodyIdx("LF_SHANK"));
@@ -99,10 +104,10 @@ class ENVIRONMENT : public RaisimGymEnv {
 
     updateObservation();
 
-    rewards_.record("torque", anymal_->getGeneralizedForce().squaredNorm());
-    rewards_.record("forwardVel", std::min(4.0, bodyLinearVel_[0]));
-
-    return rewards_.sum();
+    torque_reward_ = torque_coeff_ * anymal_->getGeneralizedForce().squaredNorm();
+    speed_reward_ = vx_reward_coeff_ * std::min(4.0, bodyLinearVel_[0]);
+    all_reward_ = torque_reward_ + speed_reward_;
+    return all_reward_;
   }
 
   void updateObservation() {
@@ -119,6 +124,7 @@ class ENVIRONMENT : public RaisimGymEnv {
         gc_.tail(12), /// joint angles
         bodyLinearVel_, bodyAngularVel_, /// body linear&angular velocity
         gv_.tail(12); /// joint velocity
+        target_vx_, target_wz_; /// target 2dof
   }
 
   void observe(Eigen::Ref<EigenVec> ob) final {
@@ -127,7 +133,7 @@ class ENVIRONMENT : public RaisimGymEnv {
   }
 
   bool isTerminalState(float& terminalReward) final {
-    terminalReward = float(terminalRewardCoeff_);
+    terminalReward = float(done_reward_);
 
     /// if the contact body is not feet
     for(auto& contact: anymal_->getContacts())
@@ -138,6 +144,20 @@ class ENVIRONMENT : public RaisimGymEnv {
     return false;
   }
 
+  void getRewardInfo(Eigen::Ref<EigenVec> reward)
+  {
+    reward << 
+    abs(target_vx_ - bodyLinearVel_[0]), 
+    abs(target_wz_ - bodyAngularVel_[2]), 
+    abs(bodyLinearVel_[1]) + abs(bodyLinearVel_[2]), 
+    abs(bodyAngularVel_[0]) + abs(bodyAngularVel_[1]), 
+    anymal_->getGeneralizedForce().squaredNorm(), 
+    speed_reward_, 
+    all_reward_ ,
+    0,0,0,0,0,0,0,0,0;
+    return;
+  }
+
   void curriculumUpdate() { };
 
  private:
@@ -145,7 +165,7 @@ class ENVIRONMENT : public RaisimGymEnv {
   bool visualizable_ = false;
   raisim::ArticulatedSystem* anymal_;
   Eigen::VectorXd gc_init_, gv_init_, gc_, gv_, pTarget_, pTarget12_, vTarget_;
-  double terminalRewardCoeff_ = -10.;
+  double done_reward_=0.0, vx_reward_coeff_=0.0, wz_reward_coeff_=0.0, torque_coeff_=0.0;
   Eigen::VectorXd actionMean_, actionStd_, obDouble_;
   Eigen::Vector3d bodyLinearVel_, bodyAngularVel_;
   std::set<size_t> footIndices_;
@@ -153,6 +173,14 @@ class ENVIRONMENT : public RaisimGymEnv {
   /// these variables are not in use. They are placed to show you how to create a random number sampler.
   std::normal_distribution<double> normDist_;
   thread_local static std::mt19937 gen_;
+
+  bool cmd_follow_flag_ = false;
+  double target_vx_ = 0.0;
+  double target_wz_ = 0.0;
+  int step_ = 0, curriculum_ = 0;
+  double torque_reward_ = 0.0;
+  double speed_reward_ = 0.0;
+  double all_reward_ = 0.0;
 };
 thread_local std::mt19937 raisim::ENVIRONMENT::gen_;
 
