@@ -1,8 +1,8 @@
 from ruamel.yaml import YAML, dump, RoundTripDumper
 from raisimGymTorch.env.RaisimGymVecEnv import RaisimGymVecEnv as VecEnv
 from raisimGymTorch.helper.raisim_gym_helper import ConfigurationSaver, load_param
-from raisimGymTorch.env.bin.rsg_anymal import NormalSampler
-from raisimGymTorch.env.bin.rsg_anymal import RaisimGymEnv
+from raisimGymTorch.env.bin.forward import NormalSampler
+from raisimGymTorch.env.bin.forward import RaisimGymEnv
 import os
 import math
 import time
